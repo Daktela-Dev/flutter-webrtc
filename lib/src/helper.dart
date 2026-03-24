@@ -120,6 +120,11 @@ class Helper {
   static Future<void> selectAudioInput(String deviceId) =>
       NativeAudioManagement.selectAudioInput(deviceId);
 
+  /// Restart the Audio Device Module to fix sample rate after Bluetooth device changes.
+  /// macOS only (PlatformDefault ADM).
+  static Future<void> restartAudioDeviceModule() =>
+      NativeAudioManagement.restartAudioDeviceModule();
+
   /// Enable or disable speakerphone
   /// for iOS/Android only
   static Future<void> setSpeakerphoneOn(bool enable) =>

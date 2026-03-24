@@ -67,6 +67,15 @@ class NativeAudioManagement {
     track.enabled = !mute;
   }
 
+  /// Restart the Audio Device Module (stop + init + start playout/recording).
+  /// Fixes sample rate mismatch (deep voice / chipmunk) after Bluetooth device changes
+  /// on macOS with PlatformDefault ADM.
+  static Future<void> restartAudioDeviceModule() async {
+    if (!kIsWeb) {
+      await WebRTC.invokeMethod('restartAudioDeviceModule');
+    }
+  }
+
   // ADM APIs
   static Future<void> startLocalRecording() async {
     if (!kIsWeb) {
