@@ -444,6 +444,23 @@ static FlutterWebRTCPlugin *sharedSingleton;
     NSDictionary* argsMap = call.arguments;
     NSString* deviceId = argsMap[@"deviceId"];
     [self selectAudioOutput:deviceId result:result];
+  } else if ([@"restartAudioDeviceModule" isEqualToString:call.method]) {
+#if TARGET_OS_OSX
+    RTCAudioDeviceModule* adm = _peerConnectionFactory.audioDeviceModule;
+    if (adm != nil) {
+      NSLog(@"[FlutterWebRTC] Restarting ADM to fix sample rate");
+      [adm stopPlayout];
+      [adm stopRecording];
+      [adm initPlayout];
+      [adm initRecording];
+      [adm startPlayout];
+      [adm startRecording];
+      NSLog(@"[FlutterWebRTC] ADM restart complete");
+    }
+    result(nil);
+#else
+    result(nil);
+#endif
   } else if ([@"mediaStreamGetTracks" isEqualToString:call.method]) {
     NSDictionary* argsMap = call.arguments;
     NSString* streamId = argsMap[@"streamId"];
