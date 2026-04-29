@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -60,6 +62,11 @@ class NativeAudioManagement {
           'setMicrophoneMute',
           <String, dynamic>{'trackId': track.id, 'mute': mute},
         );
+        // Windows libwebrtc stops RTP entirely if track.enabled=false, which
+        // makes strict-timer carriers drop the call (flutter-webrtc#1861).
+        // The native handler above mutes by zeroing capture volume; leave
+        // track.enabled alone so frames keep flowing.
+        if (Platform.isWindows) return;
       } on PlatformException catch (e) {
         throw 'Unable to MediaStreamTrack::setMicrophoneMute: ${e.message}';
       }

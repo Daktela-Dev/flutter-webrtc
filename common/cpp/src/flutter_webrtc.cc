@@ -431,6 +431,33 @@ void FlutterWebRTC::HandleMethodCall(
       track->set_enabled(GetValue<bool>(enable));
     }
     result->Success();
+  } else if (method_call.method_name().compare("setMicrophoneMute") == 0) {
+    // Windows mute-RTP fix (#858247 / flutter-webrtc#1861): muting via
+    // track.enabled=false stops RTP entirely on Windows libwebrtc, which
+    // makes carriers with strict RTP timers (e.g. Euroweb 30s) drop the
+    // call. Mute the capture session by zeroing its volume instead so the
+    // pipeline keeps producing (silent) frames.
+    static uint32_t saved_microphone_volume = 0;
+    if (!method_call.arguments()) {
+      result->Error("Bad Arguments", "Null arguments received");
+      return;
+    }
+    const EncodableMap params =
+        GetValue<EncodableMap>(*method_call.arguments());
+    const bool mute = GetValue<bool>(findEncodableValue(params, "mute"));
+
+    if (mute) {
+      uint32_t current = 0;
+      audio_device_->MicrophoneVolume(current);
+      if (current > 0) saved_microphone_volume = current;
+      audio_device_->SetMicrophoneVolume(0);
+    } else {
+      uint32_t restore =
+          saved_microphone_volume > 0 ? saved_microphone_volume : 255;
+      audio_device_->SetMicrophoneVolume(restore);
+      saved_microphone_volume = 0;
+    }
+    result->Success();
   } else if (method_call.method_name().compare("trackDispose") == 0) {
     if (!method_call.arguments()) {
       result->Error("Bad Arguments", "Null constraints arguments received");
