@@ -432,12 +432,15 @@ void FlutterWebRTC::HandleMethodCall(
     }
     result->Success();
   } else if (method_call.method_name().compare("setMicrophoneMute") == 0) {
-    // Windows mute-RTP fix (#858247 / flutter-webrtc#1861): muting via
-    // track.enabled=false stops RTP entirely on Windows libwebrtc, which
-    // makes carriers with strict RTP timers (e.g. Euroweb 30s) drop the
-    // call. Mute the capture session by zeroing its volume instead so the
-    // pipeline keeps producing (silent) frames.
-    static uint32_t saved_microphone_volume = 0;
+    // Mute-RTP fix (#858247 / #86ca5zaq3 / flutter-webrtc#1861): muting via
+    // track.enabled=false stops RTP entirely on Windows libwebrtc, so carriers
+    // with strict RTP timers (e.g. Euroweb 30s) drop the call. Instead mute by
+    // zeroing the captured frames in the APM capture post-processor, leaving
+    // the track enabled so the encoder keeps emitting silent RTP.
+    //
+    // This replaces the earlier SetMicrophoneVolume(0) approach, which AGC
+    // defeated on many devices (capture gain was driven straight back up), so
+    // the remote heard the agent despite "mute" — see mute_audio_processor.h.
     if (!method_call.arguments()) {
       result->Error("Bad Arguments", "Null arguments received");
       return;
@@ -445,18 +448,7 @@ void FlutterWebRTC::HandleMethodCall(
     const EncodableMap params =
         GetValue<EncodableMap>(*method_call.arguments());
     const bool mute = GetValue<bool>(findEncodableValue(params, "mute"));
-
-    if (mute) {
-      uint32_t current = 0;
-      audio_device_->MicrophoneVolume(current);
-      if (current > 0) saved_microphone_volume = current;
-      audio_device_->SetMicrophoneVolume(0);
-    } else {
-      uint32_t restore =
-          saved_microphone_volume > 0 ? saved_microphone_volume : 255;
-      audio_device_->SetMicrophoneVolume(restore);
-      saved_microphone_volume = 0;
-    }
+    capture_mute_processor_.set_muted(mute);
     result->Success();
   } else if (method_call.method_name().compare("trackDispose") == 0) {
     if (!method_call.arguments()) {

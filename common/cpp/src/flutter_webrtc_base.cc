@@ -20,10 +20,21 @@ FlutterWebRTCBase::FlutterWebRTCBase(BinaryMessenger* messenger,
   video_device_ = factory_->GetVideoDevice();
   desktop_device_ = factory_->GetDesktopDevice();
   audio_processing_ = factory_->GetAudioProcessing();
+  // Install the mute capture post-processor so "setMicrophoneMute" can silence
+  // outgoing audio by zeroing captured frames (keeps RTP flowing). See
+  // mute_audio_processor.h for why this replaces SetMicrophoneVolume(0).
+  if (audio_processing_) {
+    audio_processing_->SetCapturePostProcessing(&capture_mute_processor_);
+  }
   event_channel_ = EventChannelProxy::Create(messenger_, task_runner_, kEventChannelName);
 }
 
 FlutterWebRTCBase::~FlutterWebRTCBase() {
+  // Detach before the member (and libwebrtc) are torn down — the APM holds a
+  // raw pointer to capture_mute_processor_.
+  if (audio_processing_) {
+    audio_processing_->SetCapturePostProcessing(nullptr);
+  }
   LibWebRTC::Terminate();
 }
 

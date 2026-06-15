@@ -156,6 +156,10 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
     scoped_refptr<RTCAudioTrack> track =
         base_->factory_->CreateAudioTrack(source, uuid.c_str());
 
+    // Each new capture starts unmuted — clear any stale mute left from a prior
+    // call (mirrors the iOS getUserAudio reset of captureMuted).
+    base_->capture_mute_processor_.set_muted(false);
+
     std::string track_id = track->id().std_string();
 
     EncodableMap track_info;

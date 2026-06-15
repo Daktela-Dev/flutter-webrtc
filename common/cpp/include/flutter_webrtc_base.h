@@ -11,6 +11,8 @@
 
 #include "libwebrtc.h"
 
+#include "mute_audio_processor.h"
+
 #include "rtc_audio_device.h"
 #include "rtc_audio_processing.h"
 #include "rtc_desktop_device.h"
@@ -108,6 +110,11 @@ class FlutterWebRTCBase {
   scoped_refptr<RTCVideoDevice> video_device_;
   scoped_refptr<RTCDesktopDevice> desktop_device_;
   scoped_refptr<RTCAudioProcessing> audio_processing_;
+  // Capture post-processor that zeroes mic frames while muted (see header).
+  // Registered on audio_processing_ in the constructor; toggled by the
+  // "setMicrophoneMute" method handler. Must outlive audio_processing_'s use of
+  // it — unregistered in the destructor before LibWebRTC::Terminate().
+  MuteAudioProcessor capture_mute_processor_;
   RTCConfiguration configuration_;
 
   std::map<std::string, scoped_refptr<RTCPeerConnection>> peerconnections_;
