@@ -84,6 +84,18 @@
 
 - (void)audioProcessingProcess:(RTC_OBJC_TYPE(RTCAudioBuffer) *)audioBuffer {
   os_unfair_lock_lock(&_lock);
+
+  // iOS mute-RTP fix (#883433): zero the captured frames in place while muted.
+  // The track stays enabled so the encoder keeps emitting (silent) RTP — strict
+  // RTP-timer carriers (e.g. Telekom HU ~13s) no longer drop the call. Zeroing
+  // before the processors/renderers loops means local-recording taps also capture
+  // silence while muted (correct privacy semantics).
+  if (_captureMuted) {
+    for (int i = 0; i < audioBuffer.channels; i++) {
+      memset([audioBuffer rawBufferForChannel:i], 0, audioBuffer.frames * sizeof(float));
+    }
+  }
+
   for (id<ExternalAudioProcessingDelegate> processor in _processors) {
     [processor audioProcessingProcess:audioBuffer];
   }

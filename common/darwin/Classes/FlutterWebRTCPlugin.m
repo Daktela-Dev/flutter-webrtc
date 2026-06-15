@@ -1122,13 +1122,29 @@ static FlutterWebRTCPlugin *sharedSingleton;
     result(nil);
   } else if ([@"setMicrophoneMute" isEqualToString:call.method]) {
     NSDictionary* argsMap = call.arguments;
-    NSString* trackId = argsMap[@"trackId"];
     NSNumber* mute = argsMap[@"mute"];
+#if TARGET_OS_IPHONE
+    // iOS mute-RTP fix (#883433 / flutter-webrtc#1861): disabling the track
+    // (audioTrack.isEnabled = NO) stops outgoing RTP entirely on iOS, so
+    // carriers with strict RTP-receive timers (e.g. Telekom HU ~13s) drop the
+    // call. Instead, mute by zeroing captured audio frames in the APM capture
+    // post-processing adapter while leaving the track enabled, so the encoder
+    // keeps emitting silent RTP. Do NOT touch audioTrack.isEnabled here — sip_ua
+    // hold legitimately disables tracks (its stopped RTP is SIP-signalled).
+    //
+    // TEMPORARY: drop this whole iOS branch once we can run an ADM that silences
+    // a disabled track natively — the AudioEngine ADM after its iOS BT/first-call
+    // regressions (86c9h18fb) + macOS instability are fixed, or libwebrtc m144+
+    // after flutter-webrtc#2018. See CHANGELOG_DAKTELA.md "Carried patches" #4.
+    [_audioManager setCaptureMuted:mute.boolValue];
+#else
+    NSString* trackId = argsMap[@"trackId"];
     id<LocalTrack> track = self.localTracks[trackId];
     if (track != nil && [track isKindOfClass:[LocalAudioTrack class]]) {
       RTCAudioTrack* audioTrack = ((LocalAudioTrack*)track).audioTrack;
       audioTrack.isEnabled = !mute.boolValue;
     }
+#endif
     result(nil);
   }
 #if TARGET_OS_IPHONE

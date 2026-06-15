@@ -16,4 +16,11 @@
 
 - (void)removeLocalAudioRenderer:(nonnull id<RTCAudioRenderer>)renderer;
 
+// iOS mute-RTP fix (#883433): mute the microphone by zeroing captured frames
+// (track stays enabled, RTP keeps flowing as silence) instead of disabling the
+// track (which stops RTP on iOS). Delegates to capturePostProcessingAdapter.
+// Temporary: drop once an ADM that silences a disabled track natively is viable
+// (CHANGELOG_DAKTELA.md "Carried patches" #4).
+- (void)setCaptureMuted:(BOOL)muted;
+
 @end

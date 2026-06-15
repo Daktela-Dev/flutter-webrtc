@@ -7,6 +7,7 @@
 #import "VideoProcessingAdapter.h"
 #import "LocalVideoTrack.h"
 #import "LocalAudioTrack.h"
+#import "AudioManager.h"
 
 @implementation RTCMediaStreamTrack (Flutter)
 
@@ -160,6 +161,14 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
   RTCAudioSource *audioSource = [self.peerConnectionFactory audioSourceWithConstraints:rtcConstraints];
   RTCAudioTrack* audioTrack = [self.peerConnectionFactory audioTrackWithSource:audioSource trackId:trackId];
   LocalAudioTrack *localAudioTrack = [[LocalAudioTrack alloc] initWithTrack:audioTrack];
+
+#if TARGET_OS_IPHONE
+  // iOS mute-RTP fix (#883433): a new capture always starts unmuted, even if the
+  // app-level unmute at call end was skipped (e.g. currentCall nulled before the
+  // call screen's unmute guard ran). Otherwise a stale captureMuted flag would
+  // silence the next call.
+  [AudioManager.sharedInstance setCaptureMuted:NO];
+#endif
 
   audioTrack.settings = @{
     @"deviceId" : audioDeviceId,

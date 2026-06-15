@@ -47,4 +47,8 @@
   [_renderPreProcessingAdapter removeAudioRenderer:sink];
 }
 
+- (void)setCaptureMuted:(BOOL)muted {
+  _capturePostProcessingAdapter.captureMuted = muted;
+}
+
 @end
