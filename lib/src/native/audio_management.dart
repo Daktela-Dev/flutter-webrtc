@@ -62,12 +62,11 @@ class NativeAudioManagement {
           'setMicrophoneMute',
           <String, dynamic>{'trackId': track.id, 'mute': mute},
         );
-        // Windows AND iOS libwebrtc stop RTP entirely if track.enabled=false,
-        // which makes strict-timer carriers drop the call (flutter-webrtc#1861,
-        // #883433). The native handler mutes without disabling the track —
-        // Windows zeroes capture volume, iOS zeroes the APM capture frames — so
-        // leave track.enabled alone and let silent frames keep flowing.
-        if (Platform.isWindows || Platform.isIOS) return;
+        // On Windows, iOS and macOS a muted call must keep sending silent RTP,
+        // or strict-timer carriers drop it (flutter-webrtc#1861, #883433,
+        // #958966). Their native handlers zero the APM capture frames and keep
+        // the track enabled, so leave track.enabled alone here.
+        if (Platform.isWindows || Platform.isIOS || Platform.isMacOS) return;
       } on PlatformException catch (e) {
         throw 'Unable to MediaStreamTrack::setMicrophoneMute: ${e.message}';
       }

@@ -162,13 +162,10 @@ typedef void (^NavigatorUserMediaSuccessCallback)(RTCMediaStream* mediaStream);
   RTCAudioTrack* audioTrack = [self.peerConnectionFactory audioTrackWithSource:audioSource trackId:trackId];
   LocalAudioTrack *localAudioTrack = [[LocalAudioTrack alloc] initWithTrack:audioTrack];
 
-#if TARGET_OS_IPHONE
-  // iOS mute-RTP fix (#883433): a new capture always starts unmuted, even if the
-  // app-level unmute at call end was skipped (e.g. currentCall nulled before the
-  // call screen's unmute guard ran). Otherwise a stale captureMuted flag would
-  // silence the next call.
+  // iOS/macOS mute-RTP fix (#883433, #958966): a new capture always starts
+  // unmuted, even if the app-level unmute at call end was skipped. Otherwise a
+  // stale captureMuted flag would silence the next call.
   [AudioManager.sharedInstance setCaptureMuted:NO];
-#endif
 
   audioTrack.settings = @{
     @"deviceId" : audioDeviceId,
