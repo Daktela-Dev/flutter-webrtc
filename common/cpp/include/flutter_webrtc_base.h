@@ -115,6 +115,12 @@ class FlutterWebRTCBase {
   // "setMicrophoneMute" method handler. Must outlive audio_processing_'s use of
   // it — unregistered in the destructor before LibWebRTC::Terminate().
   MuteAudioProcessor capture_mute_processor_;
+  // The one microphone source, created on first getUserMedia and shared by every
+  // audio track after it. Destroying a libwebrtc LocalAudioSource while capture
+  // runs can deadlock the signaling and capture threads
+  // (webrtc-sdk/libwebrtc#160), so it must not die per call. Holding it does
+  // not keep the mic open: recording follows the sending streams, not sources.
+  scoped_refptr<RTCAudioSource> audio_input_source_;
   RTCConfiguration configuration_;
 
   std::map<std::string, scoped_refptr<RTCPeerConnection>> peerconnections_;

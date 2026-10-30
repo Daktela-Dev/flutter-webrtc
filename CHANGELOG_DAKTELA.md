@@ -4,6 +4,10 @@ This file documents what this fork carries on top of [upstream flutter-webrtc/fl
 
 The fork's `main` branch always reflects the latest set of patches. Release tags (`daktela-<upstream-version>+<n>`) pin specific iterations the Daktela Flutter app can depend on via `pubspec.yaml`.
 
+## daktela-1.3.1+4 — unreleased
+
+Built on `daktela-1.3.1+3`. Adds **patch 5 (Windows/desktop audio-source deadlock)**. Patches 1–4 unchanged.
+
 ## daktela-1.3.1+3 — 2026-06-15
 
 Built on `daktela-1.3.1+2`. **Reworks patch 3 (Windows/desktop mute)** from capture-volume-zeroing to APM frame-zeroing — fixes the regression where the remote heard the agent the whole time despite pressing mute (internal #86ca91cmq). Patches 1, 2, 4 unchanged.
@@ -43,3 +47,8 @@ Upstream versions after 1.3.1 ship libwebrtc m144, which has an audio regression
    - **Why not switch to the AudioEngine ADM** (which emits silence on a disabled track natively and wouldn't need this patch at all): it was tried and reverted — it regresses iOS Bluetooth routing / first-call-no-audio / hold (internal 86c9h18fb) and is unstable on macOS. On the desktop app **4.4.8** (AudioEngine ADM) operators hit duplicate audio / echo / choppy-stuttering quality on macOS (internal 872825 "seznam", 863331, 874360); all of it disappeared after **4.4.9** downgraded to this PlatformDefault/CoreAudio ADM. The macOS screen-share-audio + mic crash (#1986) is the same trade.
    - **Drop this patch once** we can run an ADM that emits silence on a muted (disabled) track *without* stopping capture — i.e. the **AudioEngine ADM** once its iOS BT/first-call/hold regressions (86c9h18fb) and macOS audio instability (872825 / 863331 / #1986) are fixed, **or** a post-1.3.1 / libwebrtc m144+ upstream once [flutter-webrtc#2018](https://github.com/flutter-webrtc/flutter-webrtc/issues/2018) is resolved. Until one of those lands, frame-zeroing is the only ADM-independent fix.
    - Tracked upstream as [flutter-webrtc#1861](https://github.com/flutter-webrtc/flutter-webrtc/issues/1861) / [dart-sip-ua#563](https://github.com/cloudwebrtc/dart-sip-ua/issues/563). Windows/Linux (frame-zeroing as of `+3`, see patch 3), macOS (`isEnabled` toggle), Android (OS-level mute) paths unchanged by this iOS patch.
+
+5. **Windows/desktop audio-source deadlock** (internal TASK-22.7) — *added in `+4`*
+   - libwebrtc's `~LocalAudioSource` holds `sink_lock_` and then takes `CustomAudioTransportImpl::capture_lock_`; the ADM capture thread takes them in the opposite order. A source destroyed while the mic is capturing can deadlock the signaling and capture threads for good, and the UI thread waiting on the track dispose hangs with them (window "Not Responding", reproduced at 36–226 calls). Reported upstream as [webrtc-sdk/libwebrtc#160](https://github.com/webrtc-sdk/libwebrtc/issues/160).
+   - Fix: `getUserMedia` audio reuses one `RTCAudioSource` (`FlutterWebRTCBase::audio_input_source_`) instead of creating one per call, so no `LocalAudioSource` is destroyed while the plugin lives. Tracks are still created and disposed per call. Holding the source does not keep the mic open: recording follows the sending streams.
+   - Drop this patch once the vendored `libwebrtc.dll` contains the upstream fix for #160.

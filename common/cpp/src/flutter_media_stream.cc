@@ -150,8 +150,12 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       }
     }
 
-    scoped_refptr<RTCAudioSource> source =
-        base_->factory_->CreateAudioSource("audio_input");
+    // Reused rather than created per call, see audio_input_source_.
+    if (!base_->audio_input_source_) {
+      base_->audio_input_source_ =
+          base_->factory_->CreateAudioSource("audio_input");
+    }
+    scoped_refptr<RTCAudioSource> source = base_->audio_input_source_;
     std::string uuid = base_->GenerateUUID();
     scoped_refptr<RTCAudioTrack> track =
         base_->factory_->CreateAudioTrack(source, uuid.c_str());
