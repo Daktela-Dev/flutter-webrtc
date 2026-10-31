@@ -4,6 +4,10 @@ This file documents what this fork carries on top of [upstream flutter-webrtc/fl
 
 The fork's `main` branch always reflects the latest set of patches. Release tags (`daktela-<upstream-version>+<n>`) pin specific iterations the Daktela Flutter app can depend on via `pubspec.yaml`.
 
+## daktela-1.3.1+5 — 2026-10-31
+
+Built on `daktela-1.3.1+4`. Adds **patch 6 (desktop event-channel write after free)**, the heap corruption behind the silent Windows deaths (internal TASK-22). Patches 1–5 unchanged. Patch 6 shipped earlier on its own on top of `+3` as `daktela-1.3.1+3.1` (desktop patch release).
+
 ## daktela-1.3.1+4 — 2026-10-30
 
 Built on `daktela-1.3.1+3`. Adds **patch 5 (Windows/desktop audio-source deadlock)** and **extends patch 4 (iOS mute-RTP fix) to macOS** (internal #958966): `setMicrophoneMute` on macOS now zeroes the APM capture frames like iOS instead of disabling the track, and a new capture resets the flag on macOS too. The macOS `isEnabled` mute path is gone. The Dart `Helper.setMicrophoneMute` guard now covers `Platform.isMacOS`. Patches 1–3 unchanged; patch 2 (`restartAudioDeviceModule`) stays for device changes only.
@@ -54,3 +58,8 @@ Upstream versions after 1.3.1 ship libwebrtc m144, which has an audio regression
    - libwebrtc's `~LocalAudioSource` holds `sink_lock_` and then takes `CustomAudioTransportImpl::capture_lock_`; the ADM capture thread takes them in the opposite order. A source destroyed while the mic is capturing can deadlock the signaling and capture threads for good, and the UI thread waiting on the track dispose hangs with them (window "Not Responding", reproduced at 36–226 calls). Reported upstream as [webrtc-sdk/libwebrtc#160](https://github.com/webrtc-sdk/libwebrtc/issues/160).
    - Fix: `getUserMedia` audio reuses one `RTCAudioSource` (`FlutterWebRTCBase::audio_input_source_`) instead of creating one per call, so no `LocalAudioSource` is destroyed while the plugin lives. Tracks are still created and disposed per call. Holding the source does not keep the mic open: recording follows the sending streams.
    - Drop this patch once the vendored `libwebrtc.dll` contains the upstream fix for #160.
+
+6. **Desktop event-channel write after free** (internal TASK-22) — *added in `+5`; alone on `+3` as `+3.1`*
+   - `peerConnectionClose` erases the peer connection's observer, which deletes its `EventChannelProxyImpl`. Flutter's C++ `~EventChannel` does not unregister the stream handler, and the handler's lambdas captured the proxy's `this`. The Dart side cancels the event subscription only in `dispose()` (native `peerConnectionDispose` is empty), so its `cancel` ran `on_listen_called_ = false` on the freed proxy — one zero byte written into freed heap on **every call**. With the block usually reused by then, it corrupted an unrelated live object; the app died later and elsewhere (`STATUS_HEAP_CORRUPTION`, a `CanvasPathMeasure` double free), about once per few hundred calls. Full PageHeap stopped it within the first 8 calls; with the fix, 300/300 clean.
+   - Fix: the proxy's listen state (`sink`, `event_queue`, `on_listen_called`) lives in a shared `State` the handler owns; the lambdas capture that, never `this`. The handler is deliberately left registered: a `cancel` with no handler throws `MissingPluginException` in Dart and would be reported on every call. Affects Windows and Linux (`common/cpp`).
+   - Drop this patch once upstream's `EventChannelProxyImpl` no longer captures `this` in its stream handler (or unregisters it safely on close).
