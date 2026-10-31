@@ -4,6 +4,10 @@ This file documents what this fork carries on top of [upstream flutter-webrtc/fl
 
 The fork's `main` branch always reflects the latest set of patches. Release tags (`daktela-<upstream-version>+<n>`) pin specific iterations the Daktela Flutter app can depend on via `pubspec.yaml`.
 
+## daktela-1.3.1+3.1 — 2026-11-01 (desktop patch line)
+
+Built on `daktela-1.3.1+3`, for a desktop patch release ahead of `+4`. Adds only **patch 6 (desktop event-channel write after free)**, the heap corruption behind the silent Windows deaths (internal TASK-22). Patch 5 (`+4`, audio-source deadlock) and the macOS mute change of `+4` are **not** in this line. Patches 1–4 unchanged.
+
 ## daktela-1.3.1+3 — 2026-06-15
 
 Built on `daktela-1.3.1+2`. **Reworks patch 3 (Windows/desktop mute)** from capture-volume-zeroing to APM frame-zeroing — fixes the regression where the remote heard the agent the whole time despite pressing mute (internal #86ca91cmq). Patches 1, 2, 4 unchanged.
@@ -43,3 +47,8 @@ Upstream versions after 1.3.1 ship libwebrtc m144, which has an audio regression
    - **Why not switch to the AudioEngine ADM** (which emits silence on a disabled track natively and wouldn't need this patch at all): it was tried and reverted — it regresses iOS Bluetooth routing / first-call-no-audio / hold (internal 86c9h18fb) and is unstable on macOS. On the desktop app **4.4.8** (AudioEngine ADM) operators hit duplicate audio / echo / choppy-stuttering quality on macOS (internal 872825 "seznam", 863331, 874360); all of it disappeared after **4.4.9** downgraded to this PlatformDefault/CoreAudio ADM. The macOS screen-share-audio + mic crash (#1986) is the same trade.
    - **Drop this patch once** we can run an ADM that emits silence on a muted (disabled) track *without* stopping capture — i.e. the **AudioEngine ADM** once its iOS BT/first-call/hold regressions (86c9h18fb) and macOS audio instability (872825 / 863331 / #1986) are fixed, **or** a post-1.3.1 / libwebrtc m144+ upstream once [flutter-webrtc#2018](https://github.com/flutter-webrtc/flutter-webrtc/issues/2018) is resolved. Until one of those lands, frame-zeroing is the only ADM-independent fix.
    - Tracked upstream as [flutter-webrtc#1861](https://github.com/flutter-webrtc/flutter-webrtc/issues/1861) / [dart-sip-ua#563](https://github.com/cloudwebrtc/dart-sip-ua/issues/563). Windows/Linux (frame-zeroing as of `+3`, see patch 3), macOS (`isEnabled` toggle), Android (OS-level mute) paths unchanged by this iOS patch.
+
+6. **Desktop event-channel write after free** (internal TASK-22) — *added in `+3.1` (desktop patch on `+3`); on `main` from `+5`*
+   - `peerConnectionClose` erases the peer connection's observer, which deletes its `EventChannelProxyImpl`. Flutter's C++ `~EventChannel` does not unregister the stream handler, and the handler's lambdas captured the proxy's `this`. The Dart side cancels the event subscription only in `dispose()` (native `peerConnectionDispose` is empty), so its `cancel` ran `on_listen_called_ = false` on the freed proxy — one zero byte written into freed heap on **every call**. With the block usually reused by then, it corrupted an unrelated live object; the app died later and elsewhere (`STATUS_HEAP_CORRUPTION`, a `CanvasPathMeasure` double free), about once per few hundred calls. Full PageHeap stopped it within the first 8 calls; with the fix, 300/300 clean.
+   - Fix: the proxy's listen state (`sink`, `event_queue`, `on_listen_called`) lives in a shared `State` the handler owns; the lambdas capture that, never `this`. The handler is deliberately left registered: a `cancel` with no handler throws `MissingPluginException` in Dart and would be reported on every call. Affects Windows and Linux (`common/cpp`).
+   - Drop this patch once upstream's `EventChannelProxyImpl` no longer captures `this` in its stream handler (or unregisters it safely on close).
