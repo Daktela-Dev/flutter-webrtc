@@ -77,61 +77,69 @@ class EventChannelProxyImpl : public EventChannelProxy {
              messenger,
              channelName,
              &flutter::StandardMethodCodec::GetInstance())),
+             state_(std::make_shared<State>()),
              task_runner_(task_runner) {
+     // The stream handler outlives this proxy: ~EventChannel does not unregister it from the messenger, and
+     // peerConnectionClose deletes the proxy before Dart's dispose() sends "cancel". So the handler owns the
+     // state and never touches `this` (a captured `this` was a heap write after free, TASK-22).
+     std::shared_ptr<State> state = state_;
      auto handler = std::make_unique<
          flutter::StreamHandlerFunctions<EncodableValue>>(
-         [&](const EncodableValue* arguments,
+         [state, task_runner](const EncodableValue* arguments,
              std::unique_ptr<flutter::EventSink<EncodableValue>>&& events)
              -> std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> {
-           sink_ = std::move(events);
-           std::weak_ptr<EventSink> weak_sink = sink_;
-           for (auto& event : event_queue_) {
-            PostEvent(event);
+           state->sink = std::move(events);
+           for (auto& event : state->event_queue) {
+            PostEvent(*state, task_runner, event);
            }
-           event_queue_.clear();
-           on_listen_called_ = true;
+           state->event_queue.clear();
+           state->on_listen_called = true;
            return nullptr;
          },
-         [&](const EncodableValue* arguments)
+         [state](const EncodableValue* arguments)
              -> std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> {
-           on_listen_called_ = false;
+           state->on_listen_called = false;
            return nullptr;
          });
- 
+
      channel_->SetStreamHandler(std::move(handler));
    }
- 
+
    virtual ~EventChannelProxyImpl() {}
- 
+
    void Success(const EncodableValue& event, bool cache_event = true) override {
-     if (on_listen_called_) {
-       PostEvent(event);
+     if (state_->on_listen_called) {
+       PostEvent(*state_, task_runner_, event);
      } else {
        if (cache_event) {
-         event_queue_.push_back(event);
+         state_->event_queue.push_back(event);
        }
      }
    }
 
-   void PostEvent(const EncodableValue& event) {
-     if(task_runner_) {
-      std::weak_ptr<EventSink> weak_sink = sink_;
-       task_runner_->EnqueueTask([weak_sink, event]() {
+  private:
+   struct State {
+     std::shared_ptr<flutter::EventSink<flutter::EncodableValue>> sink;
+     std::list<EncodableValue> event_queue;
+     bool on_listen_called = false;
+   };
+
+   static void PostEvent(State& state, TaskRunner* task_runner, const EncodableValue& event) {
+     if(task_runner) {
+      std::weak_ptr<EventSink> weak_sink = state.sink;
+       task_runner->EnqueueTask([weak_sink, event]() {
         auto sink = weak_sink.lock();
         if (sink) {
           sink->Success(event);
         }
       });
      } else {
-      sink_->Success(event);
+      state.sink->Success(event);
      }
    }
- 
-  private:
+
    std::unique_ptr<EventChannel> channel_;
-   std::shared_ptr<flutter::EventSink<flutter::EncodableValue>> sink_;
-   std::list<EncodableValue> event_queue_;
-   bool on_listen_called_ = false;
+   std::shared_ptr<State> state_;
    TaskRunner* task_runner_;
  };
 
