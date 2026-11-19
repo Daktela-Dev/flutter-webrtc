@@ -4,6 +4,10 @@ This file documents what this fork carries on top of [upstream flutter-webrtc/fl
 
 The fork's `main` branch always reflects the latest set of patches. Release tags (`daktela-<upstream-version>+<n>`) pin specific iterations the Daktela Flutter app can depend on via `pubspec.yaml`.
 
+## daktela-1.3.1+6 — 2026-11-19
+
+Built on `daktela-1.3.1+5`. Adds **patch 7 (Windows/Linux microphone processing preferences)**. Changes to echo cancellation, noise suppression and automatic gain take effect on the next microphone capture.
+
 ## daktela-1.3.1+5 — 2026-10-31
 
 Built on `daktela-1.3.1+4`. Adds **patch 6 (desktop event-channel write after free)**, the heap corruption behind the silent Windows deaths (internal TASK-22). Patches 1–5 unchanged. Patch 6 shipped earlier on its own on top of `+3` as `daktela-1.3.1+3.1` (desktop patch release).
@@ -56,10 +60,16 @@ Upstream versions after 1.3.1 ship libwebrtc m144, which has an audio regression
 
 5. **Windows/desktop audio-source deadlock** (internal TASK-22.7) — *added in `+4`*
    - libwebrtc's `~LocalAudioSource` holds `sink_lock_` and then takes `CustomAudioTransportImpl::capture_lock_`; the ADM capture thread takes them in the opposite order. A source destroyed while the mic is capturing can deadlock the signaling and capture threads for good, and the UI thread waiting on the track dispose hangs with them (window "Not Responding", reproduced at 36–226 calls). Reported upstream as [webrtc-sdk/libwebrtc#160](https://github.com/webrtc-sdk/libwebrtc/issues/160).
-   - Fix: `getUserMedia` audio reuses one `RTCAudioSource` (`FlutterWebRTCBase::audio_input_source_`) instead of creating one per call, so no `LocalAudioSource` is destroyed while the plugin lives. Tracks are still created and disposed per call. Holding the source does not keep the mic open: recording follows the sending streams.
+   - In `+4` and `+5`, `getUserMedia` audio reuses one `RTCAudioSource` (`FlutterWebRTCBase::audio_input_source_`) instead of creating one per call, so no `LocalAudioSource` is destroyed while the plugin lives. Tracks are still created and disposed per call. Holding the source does not keep the mic open: recording follows the sending streams.
+   - From `+6`, patch 7 keeps one source per used processing configuration with the same lifetime guarantee.
    - Drop this patch once the vendored `libwebrtc.dll` contains the upstream fix for #160.
 
 6. **Desktop event-channel write after free** (internal TASK-22) — *added in `+5`; alone on `+3` as `+3.1`*
    - `peerConnectionClose` erases the peer connection's observer, which deletes its `EventChannelProxyImpl`. Flutter's C++ `~EventChannel` does not unregister the stream handler, and the handler's lambdas captured the proxy's `this`. The Dart side cancels the event subscription only in `dispose()` (native `peerConnectionDispose` is empty), so its `cancel` ran `on_listen_called_ = false` on the freed proxy — one zero byte written into freed heap on **every call**. With the block usually reused by then, it corrupted an unrelated live object; the app died later and elsewhere (`STATUS_HEAP_CORRUPTION`, a `CanvasPathMeasure` double free), about once per few hundred calls. Full PageHeap stopped it within the first 8 calls; with the fix, 300/300 clean.
    - Fix: the proxy's listen state (`sink`, `event_queue`, `on_listen_called`) lives in a shared `State` the handler owns; the lambdas capture that, never `this`. The handler is deliberately left registered: a `cancel` with no handler throws `MissingPluginException` in Dart and would be reported on every call. Affects Windows and Linux (`common/cpp`).
    - Drop this patch once upstream's `EventChannelProxyImpl` no longer captures `this` in its stream handler (or unregisters it safely on close).
+
+7. **Windows/Linux microphone processing preferences** (internal #969792) — *added in `+6`*
+   - The shared C++ plugin parsed the requested flags but called `CreateAudioSource` with default options. Explicitly disabling echo cancellation or automatic gain still created a source with both enabled.
+   - `GetUserAudio` maps the three boolean preferences to `RTCAudioOptions`. An omitted preference keeps its SDK default. Each combination gets a source on first use (at most eight), so changing a preference works on the next capture and restoring it reuses the original source. Keeping those sources alive preserves the teardown protection from patch 5.
+   - Drop this patch once the upstream C++ plugin applies all three flags on first capture and after a settings change, with safe source teardown.
