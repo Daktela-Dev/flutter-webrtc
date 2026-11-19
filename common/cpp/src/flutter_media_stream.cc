@@ -27,13 +27,14 @@ void FlutterMediaStream::GetUserMedia(
   auto it = constraints.find(EncodableValue("audio"));
   if (it != constraints.end()) {
     EncodableValue audio = it->second;
-    if (TypeIs<bool>(audio)) {
-      if (true == GetValue<bool>(audio)) {
-        GetUserAudio(constraints, stream, params);
-      }
-    } else if (TypeIs<EncodableMap>(audio)) {
+    if (TypeIs<EncodableMap>(audio) ||
+        (TypeIs<bool>(audio) && GetValue<bool>(audio))) {
       GetUserAudio(constraints, stream, params);
-    } else {
+      if (!params.count(EncodableValue("audioTracks"))) {
+        return result->Error("GetUserMediaFailed",
+                             "Could not create microphone source");
+      }
+    } else if (!TypeIs<bool>(audio)) {
       params[EncodableValue("audioTracks")] = EncodableValue(EncodableList());
     }
   } else {
@@ -95,6 +96,7 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
                                       scoped_refptr<RTCMediaStream> stream,
                                       EncodableMap& params) {
   bool enable_audio = false;
+  RTCAudioOptions options;
   scoped_refptr<RTCMediaConstraints> audioConstraints;
   std::string sourceId;
   std::string deviceId;
@@ -112,7 +114,20 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       EncodableMap localMap = GetValue<EncodableMap>(audio);
       sourceId = getSourceIdConstraint(localMap);
       deviceId = getDeviceIdConstraint(localMap);
+#ifdef _WIN32
+      const auto mandatory = findMap(localMap, "mandatory");
+      auto readOption = [&mandatory](const char* key, bool& option) {
+        auto entry = mandatory.find(EncodableValue(key));
+        if (entry != mandatory.end() && TypeIs<bool>(entry->second)) {
+          option = GetValue<bool>(entry->second);
+        }
+      };
+      readOption("googEchoCancellation", options.echo_cancellation);
+      readOption("googNoiseSuppression", options.noise_suppression);
+      readOption("googAutoGainControl", options.auto_gain_control);
+#else
       audioConstraints = base_->ParseMediaConstraints(localMap);
+#endif
       enable_audio = true;
     }
   }
@@ -150,12 +165,19 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       }
     }
 
-    // Reused rather than created per call, see audio_input_source_.
-    if (!base_->audio_input_source_) {
-      base_->audio_input_source_ =
-          base_->factory_->CreateAudioSource("audio_input");
+#ifdef _WIN32
+    const std::array<bool, 3> key = {options.echo_cancellation,
+                                     options.noise_suppression,
+                                     options.auto_gain_control};
+    auto& source = base_->audio_input_sources_[key];
+#else
+    auto& source = base_->audio_input_source_;
+#endif
+    if (!source) {
+      source = base_->factory_->CreateAudioSource(
+          "audio_input", RTCAudioSource::kMicrophone, options);
+      if (!source) return;
     }
-    scoped_refptr<RTCAudioSource> source = base_->audio_input_source_;
     std::string uuid = base_->GenerateUUID();
     scoped_refptr<RTCAudioTrack> track =
         base_->factory_->CreateAudioTrack(source, uuid.c_str());
@@ -177,9 +199,12 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
     EncodableMap settings;
     settings[EncodableValue("deviceId")] = EncodableValue(sourceId);
     settings[EncodableValue("kind")] = EncodableValue("audioinput");
-    settings[EncodableValue("autoGainControl")] = EncodableValue(true);
-    settings[EncodableValue("echoCancellation")] = EncodableValue(true);
-    settings[EncodableValue("noiseSuppression")] = EncodableValue(true);
+    settings[EncodableValue("autoGainControl")] =
+        EncodableValue(options.auto_gain_control);
+    settings[EncodableValue("echoCancellation")] =
+        EncodableValue(options.echo_cancellation);
+    settings[EncodableValue("noiseSuppression")] =
+        EncodableValue(options.noise_suppression);
     settings[EncodableValue("channelCount")] = EncodableValue(1);
     settings[EncodableValue("latency")] = EncodableValue(0);
     track_info[EncodableValue("settings")] = EncodableValue(settings);
