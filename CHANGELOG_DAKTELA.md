@@ -60,8 +60,7 @@ Upstream versions after 1.3.1 ship libwebrtc m144, which has an audio regression
 
 5. **Windows/desktop audio-source deadlock** (internal TASK-22.7) — *added in `+4`*
    - libwebrtc's `~LocalAudioSource` holds `sink_lock_` and then takes `CustomAudioTransportImpl::capture_lock_`; the ADM capture thread takes them in the opposite order. A source destroyed while the mic is capturing can deadlock the signaling and capture threads for good, and the UI thread waiting on the track dispose hangs with them (window "Not Responding", reproduced at 36–226 calls). Reported upstream as [webrtc-sdk/libwebrtc#160](https://github.com/webrtc-sdk/libwebrtc/issues/160).
-   - In `+4` and `+5`, `getUserMedia` audio reuses one `RTCAudioSource` (`FlutterWebRTCBase::audio_input_source_`) instead of creating one per call, so no `LocalAudioSource` is destroyed while the plugin lives. Tracks are still created and disposed per call. Holding the source does not keep the mic open: recording follows the sending streams.
-   - From `+6`, patch 7 keeps one source per used processing configuration with the same lifetime guarantee.
+   - Fix: `getUserMedia` audio reuses one `RTCAudioSource` (`FlutterWebRTCBase::audio_input_source_`) instead of creating one per call, so no `LocalAudioSource` is destroyed while the plugin lives. Tracks are still created and disposed per call. Holding the source does not keep the mic open: recording follows the sending streams.
    - Drop this patch once the vendored `libwebrtc.dll` contains the upstream fix for #160.
 
 6. **Desktop event-channel write after free** (internal TASK-22) — *added in `+5`; alone on `+3` as `+3.1`*
