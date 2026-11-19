@@ -58,15 +58,6 @@ void FlutterMediaStream::GetUserMedia(
   result->Success(EncodableValue(params));
 }
 
-void addDefaultAudioConstraints(
-    scoped_refptr<RTCMediaConstraints> audioConstraints) {
-  audioConstraints->AddOptionalConstraint("googNoiseSuppression", "true");
-  audioConstraints->AddOptionalConstraint("googEchoCancellation", "true");
-  audioConstraints->AddOptionalConstraint("echoCancellation", "true");
-  audioConstraints->AddOptionalConstraint("googEchoCancellation2", "true");
-  audioConstraints->AddOptionalConstraint("googDAEchoCancellation", "true");
-}
-
 std::string getSourceIdConstraint(const EncodableMap& mediaConstraints) {
   auto it = mediaConstraints.find(EncodableValue("optional"));
   if (it != mediaConstraints.end() && TypeIs<EncodableList>(it->second)) {
@@ -97,15 +88,12 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
                                       EncodableMap& params) {
   bool enable_audio = false;
   RTCAudioOptions options;
-  scoped_refptr<RTCMediaConstraints> audioConstraints;
   std::string sourceId;
   std::string deviceId;
   auto it = constraints.find(EncodableValue("audio"));
   if (it != constraints.end()) {
     EncodableValue audio = it->second;
     if (TypeIs<bool>(audio)) {
-      audioConstraints = RTCMediaConstraints::Create();
-      addDefaultAudioConstraints(audioConstraints);
       enable_audio = GetValue<bool>(audio);
       sourceId = "";
       deviceId = "";
@@ -114,7 +102,6 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       EncodableMap localMap = GetValue<EncodableMap>(audio);
       sourceId = getSourceIdConstraint(localMap);
       deviceId = getDeviceIdConstraint(localMap);
-#ifdef _WIN32
       const auto mandatory = findMap(localMap, "mandatory");
       auto readOption = [&mandatory](const char* key, bool& option) {
         auto entry = mandatory.find(EncodableValue(key));
@@ -125,9 +112,6 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       readOption("googEchoCancellation", options.echo_cancellation);
       readOption("googNoiseSuppression", options.noise_suppression);
       readOption("googAutoGainControl", options.auto_gain_control);
-#else
-      audioConstraints = base_->ParseMediaConstraints(localMap);
-#endif
       enable_audio = true;
     }
   }
@@ -165,14 +149,10 @@ void FlutterMediaStream::GetUserAudio(const EncodableMap& constraints,
       }
     }
 
-#ifdef _WIN32
     const std::array<bool, 3> key = {options.echo_cancellation,
                                      options.noise_suppression,
                                      options.auto_gain_control};
     auto& source = base_->audio_input_sources_[key];
-#else
-    auto& source = base_->audio_input_source_;
-#endif
     if (!source) {
       source = base_->factory_->CreateAudioSource(
           "audio_input", RTCAudioSource::kMicrophone, options);

@@ -120,12 +120,8 @@ class FlutterWebRTCBase {
   // runs can deadlock the signaling and capture threads
   // (webrtc-sdk/libwebrtc#160), so it must not die per call. Holding it does
   // not keep the mic open: recording follows the sending streams, not sources.
-#ifdef _WIN32
   // Sources have immutable processing options. At most eight combinations.
   std::map<std::array<bool, 3>, scoped_refptr<RTCAudioSource>> audio_input_sources_;
-#else
-  scoped_refptr<RTCAudioSource> audio_input_source_;
-#endif
   RTCConfiguration configuration_;
 
   std::map<std::string, scoped_refptr<RTCPeerConnection>> peerconnections_;
